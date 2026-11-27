@@ -130,18 +130,28 @@ function getItemStatus(item) {
 // STARTUP / ADMIN
 // ---------------------------------------------------------
 
+
 function setupApplication() {
   const authPanel = document.getElementById("authPanel");
   if (authPanel) authPanel.remove();
 
   const appContent = document.getElementById("appContent");
-  if (appContent) appContent.hidden = false;
+
+  if (appContent) {
+    appContent.hidden = false;
+    appContent.classList.remove("hidden");
+    appContent.style.display = "block";
+  }
 
   setupAdminButton();
   setupEventListeners();
   setDefaultDates();
   renderAll();
+
+  // Ipakita ang Dashboard sa unang pagbukas
+  showSection("dashboard");
 }
+
 
 function setupAdminButton() {
   const accountArea = document.querySelector(".account-area");
@@ -1080,7 +1090,12 @@ window.showEquipmentQR = showEquipmentQR;
 
 document.addEventListener("DOMContentLoaded", setupApplication);
 
-if (document.readyState !== "loading") {
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", setupApplication, {
+    once: true
+  });
+} else {
   setupApplication();
 }
 
