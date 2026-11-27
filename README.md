@@ -1,1 +1,183 @@
-# fael
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-BORROW | Electronic Inventory</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="header">
+    <div class="logo">
+        <span>⚙</span> E-BORROW
+    </div>
+
+    <nav>
+        <a href="#dashboard">Dashboard</a>
+        <a href="#inventory">Inventory</a>
+        <a href="#addItem">Add Equipment</a>
+    </nav>
+</header>
+
+<main class="container">
+
+    <section id="dashboard">
+        <div class="welcome">
+            <div>
+                <p class="eyebrow">EQUIPMENT MANAGEMENT SYSTEM</p>
+                <h1>Electronic Inventory</h1>
+                <p>Manage and monitor your electronics and tools.</p>
+            </div>
+            <button onclick="showAddForm()">+ Add Equipment</button>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <span>Total Equipment</span>
+                <h2 id="totalItems">0</h2>
+            </div>
+
+            <div class="stat-card">
+                <span>Total Quantity</span>
+                <h2 id="totalQuantity">0</h2>
+            </div>
+
+            <div class="stat-card">
+                <span>Available</span>
+                <h2 id="availableItems">0</h2>
+            </div>
+
+            <div class="stat-card">
+                <span>Borrowed</span>
+                <h2 id="borrowedItems">0</h2>
+            </div>
+        </div>
+    </section>
+
+    <section id="addItem" class="panel hidden">
+        <h2 id="formTitle">Add New Equipment</h2>
+
+        <form id="inventoryForm">
+
+            <label>Equipment Image</label>
+            <div class="image-upload">
+                <img id="imagePreview"
+                     src=""
+                     alt="Equipment preview"
+                     class="hidden">
+
+                <div id="uploadPlaceholder">
+                    <span>📷</span>
+                    <p>Click to upload equipment image</p>
+                    <small>JPG, PNG or WEBP</small>
+                </div>
+
+                <input type="file" id="itemImage"
+                       accept="image/jpeg,image/png,image/webp">
+            </div>
+
+            <label>Equipment Name</label>
+            <input type="text" id="itemName"
+                   placeholder="Example: Digital Multimeter" required>
+
+            <label>Category</label>
+            <select id="itemCategory" required>
+                <option value="">Select Category</option>
+                <option>Electronics</option>
+                <option>Power Tools</option>
+                <option>Hand Tools</option>
+                <option>Computer Equipment</option>
+                <option>Electrical Tools</option>
+                <option>Other</option>
+            </select>
+
+            <label>Quantity</label>
+            <input type="number" id="itemQuantity"
+                   min="1" value="1" required>
+
+            <label>Condition</label>
+            <select id="itemCondition">
+                <option>Good</option>
+                <option>Excellent</option>
+                <option>Needs Repair</option>
+                <option>Damaged</option>
+            </select>
+
+            <label>Description</label>
+            <textarea id="itemDescription"
+                      placeholder="Equipment details..."></textarea>
+
+            <div class="form-buttons">
+                <button type="submit" id="saveButton">
+                    Save Equipment
+                </button>
+                <button type="button" class="cancel-btn"
+                        onclick="cancelForm()">
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </section>
+
+    <section id="inventory">
+        <div class="section-heading">
+            <div>
+                <h2>Equipment Inventory</h2>
+                <p>All registered electronics and tools</p>
+            </div>
+        </div>
+
+        <div class="filters">
+            <input type="search" id="searchInput"
+                   placeholder="Search equipment..."
+                   oninput="renderInventory()">
+
+            <select id="filterCategory"
+                    onchange="renderInventory()">
+                <option value="All">All Categories</option>
+                <option>Electronics</option>
+                <option>Power Tools</option>
+                <option>Hand Tools</option>
+                <option>Computer Equipment</option>
+                <option>Electrical Tools</option>
+                <option>Other</option>
+            </select>
+
+            <select id="filterStatus"
+                    onchange="renderInventory()">
+                <option value="All">All Status</option>
+                <option value="Available">Available</option>
+                <option value="Borrowed">Borrowed</option>
+                <option value="Unavailable">Unavailable</option>
+            </select>
+        </div>
+
+        <div id="inventoryList" class="inventory-grid"></div>
+
+        <p id="emptyMessage" class="empty hidden">
+            No equipment found. Add your first equipment!
+        </p>
+    </section>
+
+</main>
+
+<footer>
+    <h3>E-BORROW</h3>
+    <p>Electronic Inventory Management System</p>
+    <small>© 2026 E-BORROW</small>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>
+</body>
+</html>
