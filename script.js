@@ -1,7 +1,8 @@
 
-"use strict";
-
-/* E-BORROW - GitHub Pages / Local Storage */
+// ==========================================
+// E-BORROW - GITHUB PAGES / LOCAL STORAGE
+// No Firebase and no borrower login
+// ==========================================
 
 const ADMIN_PIN = "0902";
 const INVENTORY_KEY = "eborrow_inventory_v1";
@@ -9,22 +10,131 @@ const BORROWINGS_KEY = "eborrow_borrowings_v1";
 
 const $ = id => document.getElementById(id);
 
-let inventory = loadData(INVENTORY_KEY, []);
-let borrowings = loadData(BORROWINGS_KEY, []);
+let inventory = [];
+let borrowings = [];
 let isAdmin = false;
 let editingId = null;
 let selectedImage = "";
 let selectedQrEquipmentId = null;
-let scanner = null;
+let qrScanner = null;
 let toastTimer = null;
 
-function loadData(key, fallback) {
-  try {
-    const value = JSON.parse(localStorage.getItem(key));
-    return Array.isArray(value) ? value : fallback;
-  } catch {
-    return fallback;
+// ---------- BASIC HELPERS ----------
+
+function makeId() {
+  return window.crypto?.randomUUID
+    ? crypto.randomUUID()
+    : "EB-" + Date.now() + "-" + Math.random().toString(36).slice(2, 9);
+}
+
+function todayISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function escapeHTML(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[char]);
+}
+
+function dateLabel(value) {
+  if (!value) return "—";
+  const d = new Date(`${value}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString();
+}
+
+function notify(message) {
+  const toast = $("toast");
+  if (!toast) {
+    alert(message);
+    return;
   }
+
+  toast.textContent = message;
+  toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove("show"), 3500);
+}
+
+function requireAdmin() {
+  if (isAdmin) return true;
+  notify("Admin access lang ang puwedeng gumawa nito. Mag-login muna bilang admin.");
+  return false;
+}
+
+// ---------- DATA STORAGE ----------
+
+function normalizeEquipment(item) {
+  const total = Math.max(1, Number(item.totalQuantity ?? item.quantity ?? 1));
+  const unavailable = Math.max(0, Number(item.unavailableQuantity ?? 0));
+  const available = Math.max(
+    0,
+    Math.min(total - unavailable, Number(item.availableQuantity ?? total))
+  );
+
+  return {
+    id: String(item.id || makeId()),
+    name: String(item.name || item.itemName || "Unnamed Equipment"),
+    category: String(item.category || "Other"),
+    totalQuantity: total,
+    availableQuantity: available,
+    unavailableQuantity: unavailable,
+    condition: String(item.condition || "Good"),
+    description: String(item.description || ""),
+    image: String(item.image || ""),
+    createdAt: item.createdAt || new Date().toISOString()
+  };
+}
+
+function loadArray(key, legacyKey) {
+  try {
+    const current = localStorage.getItem(key);
+    if (current) {
+      const parsed = JSON.parse(current);
+      return Array.isArray(parsed) ? parsed : [];
+    }
+
+    if (legacyKey) {
+      const legacy = localStorage.getItem(legacyKey);
+      if (legacy) {
+        const parsed = JSON.parse(legacy);
+        return Array.isArray(parsed) ? parsed : [];
+      }
+    }
+  } catch (error) {
+    console.error("Load error:", error);
+  }
+  return [];
+}
+
+function loadData() {
+  inventory = loadArray(INVENTORY_KEY, "eb_inventory").map(normalizeEquipment);
+  borrowings = loadArray(BORROWINGS_KEY, "eb_borrowings");
+
+  // Normalize borrowing records from older versions.
+  borrowings = borrowings.map(b => ({
+    id: String(b.id || makeId()),
+    borrowerName: String(b.borrowerName || ""),
+    borrowerId: String(b.borrowerId || ""),
+    borrowerContact: String(b.borrowerContact || ""),
+    equipmentId: String(b.equipmentId || ""),
+    equipmentName: String(b.equipmentName || ""),
+    quantity: Math.max(1, Number(b.quantity || 1)),
+    borrowDate: b.borrowDate || todayISO(),
+    dueDate: b.dueDate || todayISO(),
+    returnedAt: b.returnedAt || "",
+    status: b.status === "Returned" ? "Returned" : "Borrowed",
+    returnCondition: b.returnCondition || "",
+    returnNotes: b.returnNotes || ""
+  }));
+
+  // Save migrated data in the new storage keys.
+  saveData();
 }
 
 function saveData() {
@@ -33,401 +143,283 @@ function saveData() {
     localStorage.setItem(BORROWINGS_KEY, JSON.stringify(borrowings));
     return true;
   } catch (error) {
-    console.error("Storage error:", error);
-    toast("Hindi ma-save ang data. Maaaring puno na ang browser storage.");
+    console.error("Local Storage save error:", error);
+    notify("Hindi ma-save ang data. Bawasan ang laki ng larawan o storage ng browser.");
     return false;
   }
 }
 
-function id() {
-  return crypto.randomUUID
-    ? crypto.randomUUID()
-    : Date.now().toString(36) + Math.random().toString(36).slice(2);
+// ---------- ADMIN MODE ----------
+
+function updateAdminUI() {
+  document.querySelectorAll(".admin-only").forEach(el => {
+    el.classList.toggle("hidden", !isAdmin);
+  });
+
+  $("adminStatus").textContent = isAdmin ? "Administrator Mode" : "Borrower Access";
+  $("adminToggleButton").textContent = isAdmin ? "Admin Logout" : "Admin Login";
+  $("adminToggleButton").classList.toggle("danger-btn", isAdmin);
 }
 
-function safe(value) {
-  return String(value ?? "").replace(/[&<>"']/g, c => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;",
-    '"': "&quot;", "'": "&#39;"
-  })[c]);
-}
-
-function today() {
-  const d = new Date();
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0, 10);
-}
-
-function formatDate(value) {
-  if (!value) return "—";
-  const d = new Date(value + "T00:00:00");
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString();
-}
-
-function toast(message) {
-  const el = $("toast");
-  if (!el) return alert(message);
-  el.textContent = message;
-  el.classList.add("show");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove("show"), 3000);
-}
-
-function scrollTo(id) {
-  $(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-function available(item) {
-  return Number(item.availableQuantity || 0);
-}
-
-function unavailable(item) {
-  return Number(item.unavailableQuantity || 0);
-}
-
-function total(item) {
-  return Number(item.totalQuantity || 0);
-}
-
-function borrowedQty(itemId) {
-  return borrowings
-    .filter(b => b.equipmentId === itemId && b.status === "Borrowed")
-    .reduce((sum, b) => sum + Number(b.quantity || 0), 0);
-}
-
-function itemStatus(item) {
-  if (available(item) <= 0) return "Unavailable";
-  if (borrowedQty(item.id) > 0) return "Borrowed";
-  return "Available";
-}
-
-/* ---------------- STARTUP ---------------- */
-
-document.addEventListener("DOMContentLoaded", init);
-
-function init() {
-  $("appContent").classList.remove("hidden");
-  $("appContent").hidden = false;
-
-  bindEvents();
-  setDates();
-  updateAdminUI();
-  renderAll();
-}
-
-/* ---------------- ADMIN ---------------- */
-
-function loginAdmin() {
-  const pin = prompt("Enter Admin PIN:");
-
-  if (pin === null) return;
-
-  if (pin !== ADMIN_PIN) {
-    toast("Incorrect Admin PIN.");
+function toggleAdmin() {
+  if (isAdmin) {
+    isAdmin = false;
+    closeEquipmentForm();
+    updateAdminUI();
+    renderInventory();
+    notify("Admin mode ended.");
     return;
   }
 
-  isAdmin = true;
-  updateAdminUI();
-  renderInventory();
-  toast("Admin mode enabled.");
+  const pin = prompt("Enter Admin PIN:");
+  if (pin === null) return;
+
+  if (pin === ADMIN_PIN) {
+    isAdmin = true;
+    updateAdminUI();
+    renderInventory();
+    notify("Admin access granted.");
+  } else {
+    notify("Incorrect Admin PIN.");
+  }
 }
 
-function logoutAdmin() {
-  isAdmin = false;
-  closeEquipmentForm();
-  updateAdminUI();
-  renderInventory();
-  toast("Admin mode disabled.");
-}
+// ---------- EQUIPMENT FORM ----------
 
-function updateAdminUI() {
-  $("adminStatus").textContent = isAdmin ? "Admin Mode" : "Borrower Mode";
-  $("adminToggleButton").textContent = isAdmin ? "Admin Logout" : "Admin Login";
-
-  document.querySelectorAll(".admin-only").forEach(el => {
-    el.hidden = !isAdmin;
-  });
-}
-
-function requireAdmin() {
-  if (isAdmin) return true;
-  toast("Admin login is required for this action.");
-  return false;
-}
-
-/* ---------------- EVENTS ---------------- */
-
-function bindEvents() {
-  $("adminToggleButton").addEventListener("click", () => {
-    isAdmin ? logoutAdmin() : loginAdmin();
-  });
-
-  document.querySelectorAll('nav a[href^="#"], .logo[href^="#"]').forEach(link => {
-    link.addEventListener("click", event => {
-      const target = link.getAttribute("href").slice(1);
-      if ($(target)) {
-        event.preventDefault();
-        scrollTo(target);
-      }
-    });
-  });
-
-  $("addEquipmentTop").addEventListener("click", openAddForm);
-  $("addEquipmentButton").addEventListener("click", openAddForm);
-  $("quickAdd").addEventListener("click", openAddForm);
-  $("cancelForm").addEventListener("click", closeEquipmentForm);
-  $("inventoryForm").addEventListener("submit", saveEquipment);
-  $("itemImage").addEventListener("change", handleImage);
-
-  $("quickBorrow").addEventListener("click", () => {
-    scrollTo("borrow");
-    $("borrowerName").focus();
-  });
-
-  $("quickScan").addEventListener("click", () => {
-    scrollTo("qrSection");
-    startScanner();
-  });
-
-  $("borrowForm").addEventListener("submit", saveBorrow);
-  $("activeBorrowingsBody").addEventListener("click", event => {
-    const button = event.target.closest("[data-return]");
-    if (button) openReturn(button.dataset.return);
-  });
-
-  $("confirmReturn").addEventListener("click", processReturn);
-  $("cancelReturn").addEventListener("click", closeReturn);
-
-  $("searchInput").addEventListener("input", renderInventory);
-  $("filterCategory").addEventListener("change", renderInventory);
-  $("filterStatus").addEventListener("change", renderInventory);
-
-  $("historySearch").addEventListener("input", renderHistory);
-  $("historyStatus").addEventListener("change", renderHistory);
-  $("exportHistory").addEventListener("click", exportCSV);
-
-  $("startScanner").addEventListener("click", startScanner);
-  $("stopScanner").addEventListener("click", stopScanner);
-  $("makeQr").addEventListener("click", makeSelectedQR);
-
-  $("inventoryList").addEventListener("click", handleInventoryButtons);
-
-  $("notificationList").addEventListener("click", event => {
-    const button = event.target.closest("[data-alert-return]");
-    if (button) openReturn(button.dataset.alertReturn);
-  });
-}
-
-function setDates() {
-  $("borrowDate").value = today();
-
-  const due = new Date();
-  due.setDate(due.getDate() + 7);
-  due.setMinutes(due.getMinutes() - due.getTimezoneOffset());
-  $("dueDate").value = due.toISOString().slice(0, 10);
-}
-
-/* ---------------- EQUIPMENT FORM ---------------- */
-
-function openAddForm() {
-  if (!requireAdmin()) return;
-
-  editingId = null;
-  selectedImage = "";
-  $("inventoryForm").reset();
-
-  $("formTitle").textContent = "Add New Equipment";
-  $("saveButton").textContent = "Save Equipment";
-  $("itemQuantity").value = 1;
-
-  showPreview("");
-  $("addItem").classList.remove("hidden");
-  $("addItem").hidden = false;
-  scrollTo("addItem");
-}
-
-function closeEquipmentForm() {
-  $("addItem").classList.add("hidden");
-  $("addItem").hidden = true;
-  $("inventoryForm").reset();
-  editingId = null;
-  selectedImage = "";
-  showPreview("");
-}
-
-function showPreview(src) {
-  const image = $("imagePreview");
+function showImagePreview(data) {
+  const img = $("imagePreview");
   const placeholder = $("uploadPlaceholder");
 
-  if (src) {
-    image.src = src;
-    image.classList.remove("hidden");
+  if (data) {
+    img.src = data;
+    img.classList.remove("hidden");
     placeholder.classList.add("hidden");
   } else {
-    image.removeAttribute("src");
-    image.classList.add("hidden");
+    img.removeAttribute("src");
+    img.classList.add("hidden");
     placeholder.classList.remove("hidden");
   }
 }
 
-function handleImage(event) {
-  const file = event.target.files[0];
+function resetEquipmentForm() {
+  $("inventoryForm").reset();
+  editingId = null;
+  selectedImage = "";
+  showImagePreview("");
+  $("formTitle").textContent = "Add New Equipment";
+  $("saveButton").textContent = "Save Equipment";
+}
+
+function openAddForm() {
+  if (!requireAdmin()) return;
+  resetEquipmentForm();
+  $("addItem").classList.remove("hidden");
+  $("addItem").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function closeEquipmentForm() {
+  resetEquipmentForm();
+  $("addItem").classList.add("hidden");
+}
+
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onerror = () => reject(new Error("Unable to read image."));
+    reader.onload = () => {
+      const image = new Image();
+
+      image.onerror = () => reject(new Error("Invalid image file."));
+      image.onload = () => {
+        const maxSize = 800;
+        const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+        const canvas = document.createElement("canvas");
+
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+
+        const context = canvas.getContext("2d");
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+        resolve(canvas.toDataURL("image/jpeg", 0.65));
+      };
+
+      image.src = reader.result;
+    };
+
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleImageChange(event) {
+  const file = event.target.files?.[0];
   if (!file) return;
 
-  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
-    toast("Use JPG, PNG, or WEBP image.");
+  const allowed = ["image/jpeg", "image/png", "image/webp"];
+
+  if (!allowed.includes(file.type)) {
+    notify("JPG, PNG, o WEBP image lang ang puwede.");
     event.target.value = "";
     return;
   }
 
   if (file.size > 5 * 1024 * 1024) {
-    toast("Image must be 5MB or smaller.");
+    notify("Maximum image size is 5MB.");
     event.target.value = "";
     return;
   }
 
-  const reader = new FileReader();
-
-  reader.onload = () => {
-    const img = new Image();
-
-    img.onload = () => {
-      const scale = Math.min(1, 800 / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-
-      selectedImage = canvas.toDataURL("image/jpeg", 0.68);
-      showPreview(selectedImage);
-    };
-
-    img.onerror = () => toast("Unable to read the selected image.");
-    img.src = reader.result;
-  };
-
-  reader.readAsDataURL(file);
+  try {
+    selectedImage = await compressImage(file);
+    showImagePreview(selectedImage);
+  } catch (error) {
+    console.error(error);
+    notify(error.message || "Hindi ma-process ang image.");
+  }
 }
 
 function saveEquipment(event) {
   event.preventDefault();
+
   if (!requireAdmin()) return;
 
   const name = $("itemName").value.trim();
   const category = $("itemCategory").value;
-  const quantity = Number($("itemQuantity").value);
+  const totalQuantity = Number($("itemQuantity").value);
   const condition = $("itemCondition").value;
   const description = $("itemDescription").value.trim();
 
-  if (!name || !category || !Number.isInteger(quantity) || quantity < 1) {
-    toast("Please complete the required equipment details.");
+  if (!name || !category || !Number.isInteger(totalQuantity) || totalQuantity < 1) {
+    notify("Pakilagyan ng valid na equipment name, category, at quantity.");
     return;
   }
 
   if (editingId) {
-    const item = inventory.find(x => x.id === editingId);
-    if (!item) return;
-
-    const active = borrowedQty(item.id);
-    const damaged = unavailable(item);
-
-    if (quantity < active + damaged) {
-      toast("Quantity cannot be lower than borrowed and damaged units.");
+    const old = inventory.find(item => item.id === editingId);
+    if (!old) {
+      notify("Hindi na makita ang equipment na ine-edit.");
       return;
     }
 
-    item.name = name;
-    item.category = category;
-    item.totalQuantity = quantity;
-    item.availableQuantity = quantity - active - damaged;
-    item.condition = condition;
-    item.description = description;
-    if (selectedImage) item.image = selectedImage;
+    const borrowed = borrowings
+      .filter(b => b.equipmentId === editingId && b.status === "Borrowed")
+      .reduce((sum, b) => sum + Number(b.quantity || 0), 0);
 
-    toast("Equipment updated.");
+    const unavailable = Number(old.unavailableQuantity || 0);
+
+    if (totalQuantity < borrowed + unavailable) {
+      notify(`Hindi puwedeng mas mababa sa ${borrowed + unavailable}. May borrowed o unavailable units pa.`);
+      return;
+    }
+
+    old.name = name;
+    old.category = category;
+    old.totalQuantity = totalQuantity;
+    old.availableQuantity = totalQuantity - borrowed - unavailable;
+    old.condition = condition;
+    old.description = description;
+    old.image = selectedImage || old.image || "";
+    old.updatedAt = new Date().toISOString();
+
+    if (!saveData()) return;
+    notify("Equipment updated successfully.");
   } else {
-    inventory.push({
-      id: id(),
+    const newItem = {
+      id: makeId(),
       name,
       category,
-      totalQuantity: quantity,
-      availableQuantity: quantity,
+      totalQuantity,
+      availableQuantity: totalQuantity,
       unavailableQuantity: 0,
       condition,
       description,
       image: selectedImage,
       createdAt: new Date().toISOString()
-    });
+    };
 
-    toast("Equipment added successfully.");
+    inventory.unshift(newItem);
+
+    if (!saveData()) {
+      inventory.shift();
+      return;
+    }
+
+    notify("Equipment added successfully!");
   }
 
-  if (saveData()) {
-    closeEquipmentForm();
-    renderAll();
-  }
+  closeEquipmentForm();
+  renderAll();
 }
 
-/* ---------------- INVENTORY ---------------- */
+// ---------- INVENTORY ----------
+
+function borrowedQuantity(itemId) {
+  return borrowings
+    .filter(b => b.equipmentId === itemId && b.status === "Borrowed")
+    .reduce((sum, b) => sum + Number(b.quantity || 0), 0);
+}
+
+function statusFor(item) {
+  if (["Damaged", "Needs Repair"].includes(item.condition)) return "Unavailable";
+  if (Number(item.availableQuantity) <= 0) return "Borrowed";
+  if (borrowedQuantity(item.id) > 0) return "Borrowed";
+  return "Available";
+}
 
 function renderInventory() {
-  const list = $("inventoryList");
   const search = $("searchInput").value.toLowerCase().trim();
   const category = $("filterCategory").value;
-  const status = $("filterStatus").value;
+  const filterStatus = $("filterStatus").value;
 
-  const rows = inventory.filter(item => {
-    const text = `${item.name} ${item.category} ${item.description || ""}`.toLowerCase();
+  const filtered = inventory.filter(item => {
+    const text = `${item.name} ${item.category} ${item.description}`.toLowerCase();
     return text.includes(search) &&
       (category === "All" || item.category === category) &&
-      (status === "All" || itemStatus(item) === status);
+      (filterStatus === "All" || statusFor(item) === filterStatus);
   });
 
-  $("emptyMessage").classList.toggle("hidden", rows.length > 0);
+  $("emptyMessage").classList.toggle("hidden", filtered.length > 0);
 
-  list.innerHTML = rows.map(item => `
-    <article class="inventory-card">
-      ${item.image
-        ? `<img class="item-image" src="${item.image}" alt="${safe(item.name)}">`
-        : `<div class="no-image">📦</div>`}
-      <div class="item-content">
-        <h3>${safe(item.name)}</h3>
-        <p>${safe(item.category)}</p>
-        <p>Available: <strong>${available(item)}</strong> / ${total(item)}</p>
-        <p>Condition: ${safe(item.condition)}</p>
-        <p>${safe(item.description || "No description")}</p>
-        <span class="status">${itemStatus(item)}</span>
-        <div class="item-actions">
-          <button type="button" data-action="qr" data-id="${item.id}">QR Code</button>
-          ${isAdmin ? `
-            <button type="button" data-action="edit" data-id="${item.id}">Edit</button>
-            <button type="button" data-action="delete" data-id="${item.id}">Delete</button>
-          ` : ""}
+  $("inventoryList").innerHTML = filtered.map(item => {
+    const status = statusFor(item);
+    const image = item.image
+      ? `<img class="item-image" src="${item.image}" alt="${escapeHTML(item.name)}">`
+      : `<div class="no-image">📦</div>`;
+
+    const adminButtons = isAdmin ? `
+      <button class="edit-btn" data-action="edit" data-id="${escapeHTML(item.id)}">Edit</button>
+      <button class="delete-btn danger-btn" data-action="delete" data-id="${escapeHTML(item.id)}">Delete</button>
+    ` : "";
+
+    return `
+      <article class="inventory-card">
+        ${image}
+        <div class="item-content">
+          <h3>${escapeHTML(item.name)}</h3>
+          <p>${escapeHTML(item.category)}</p>
+          <p>Available: <strong>${item.availableQuantity}</strong> / ${item.totalQuantity}</p>
+          <p>Condition: ${escapeHTML(item.condition)}</p>
+          <p>${escapeHTML(item.description || "No description")}</p>
+          <span class="status ${status === "Borrowed" ? "borrowed" : status === "Unavailable" ? "unavailable" : ""}">${status}</span>
+          <div class="item-actions">
+            <button class="secondary-btn" data-action="qr" data-id="${escapeHTML(item.id)}">QR Code</button>
+            ${adminButtons}
+          </div>
         </div>
-      </div>
-    </article>
-  `).join("");
-
-  renderBorrowOptions();
+      </article>
+    `;
+  }).join("");
 }
 
-function handleInventoryButtons(event) {
-  const button = event.target.closest("[data-action]");
+function handleInventoryClick(event) {
+  const button = event.target.closest("button[data-action]");
   if (!button) return;
 
   const item = inventory.find(x => x.id === button.dataset.id);
   if (!item) return;
 
   const action = button.dataset.action;
-
-  if (action === "qr") {
-    selectedQrEquipmentId = item.id;
-    $("makeQr").disabled = false;
-    $("scanResult").textContent = `Selected equipment: ${item.name}`;
-    makeSelectedQR();
-    scrollTo("qrSection");
-  }
 
   if (action === "edit") {
     if (!requireAdmin()) return;
@@ -441,158 +433,194 @@ function handleInventoryButtons(event) {
     $("itemCondition").value = item.condition;
     $("itemDescription").value = item.description || "";
 
+    showImagePreview(selectedImage);
     $("formTitle").textContent = "Edit Equipment";
     $("saveButton").textContent = "Update Equipment";
-
-    showPreview(selectedImage);
     $("addItem").classList.remove("hidden");
-    $("addItem").hidden = false;
-    scrollTo("addItem");
+    $("addItem").scrollIntoView({ behavior: "smooth" });
   }
 
   if (action === "delete") {
     if (!requireAdmin()) return;
 
-    if (borrowedQty(item.id) > 0) {
-      toast("Cannot delete equipment with active borrowings.");
+    const active = borrowings.some(b => b.equipmentId === item.id && b.status === "Borrowed");
+    if (active) {
+      notify("Hindi puwedeng burahin: may active borrowing pa ang equipment.");
       return;
     }
 
-    if (!confirm(`Delete ${item.name}?`)) return;
+    if (confirm(`Delete "${item.name}"? Hindi na ito maibabalik.`)) {
+      const previous = inventory;
+      inventory = inventory.filter(x => x.id !== item.id);
 
-    inventory = inventory.filter(x => x.id !== item.id);
-    saveData();
-    renderAll();
-    toast("Equipment deleted.");
+      if (!saveData()) {
+        inventory = previous;
+        return;
+      }
+
+      renderAll();
+      notify("Equipment deleted.");
+    }
+  }
+
+  if (action === "qr") {
+    selectedQrEquipmentId = item.id;
+    showEquipmentQr(item);
+    $("qrSection").scrollIntoView({ behavior: "smooth" });
   }
 }
 
-/* ---------------- BORROW ---------------- */
+// ---------- BORROWING ----------
 
-function renderBorrowOptions() {
-  const select = $("borrowEquipment");
-  const oldValue = select.value;
+function renderBorrowSelect() {
+  const available = inventory.filter(item =>
+    Number(item.availableQuantity) > 0 &&
+    !["Damaged", "Needs Repair"].includes(item.condition)
+  );
 
-  select.innerHTML = `<option value="">Select available equipment</option>` +
-    inventory.filter(item => available(item) > 0).map(item =>
-      `<option value="${item.id}">${safe(item.name)} (${available(item)} available)</option>`
+  $("borrowEquipment").innerHTML =
+    `<option value="">Select available equipment</option>` +
+    available.map(item =>
+      `<option value="${escapeHTML(item.id)}">${escapeHTML(item.name)} (${item.availableQuantity} available)</option>`
     ).join("");
-
-  if (inventory.some(x => x.id === oldValue && available(x) > 0)) {
-    select.value = oldValue;
-  }
 }
 
 function saveBorrow(event) {
   event.preventDefault();
 
-  const name = $("borrowerName").value.trim();
-  const borrowerId = $("borrowerId").value.trim();
-  const contact = $("borrowerContact").value.trim();
   const equipmentId = $("borrowEquipment").value;
   const quantity = Number($("borrowQuantity").value);
   const borrowDate = $("borrowDate").value;
   const dueDate = $("dueDate").value;
+  const borrowerName = $("borrowerName").value.trim();
+  const borrowerId = $("borrowerId").value.trim();
 
-  if (!name || !borrowerId || !equipmentId) {
-    toast("Please complete borrower details.");
+  if (!borrowerName || !borrowerId || !equipmentId) {
+    notify("Pakikumpleto ang borrower details at equipment.");
     return;
   }
 
   if (!Number.isInteger(quantity) || quantity < 1) {
-    toast("Enter a valid quantity.");
+    notify("Invalid borrowing quantity.");
     return;
   }
 
   if (!borrowDate || !dueDate || dueDate < borrowDate) {
-    toast("Please check the borrowing and due dates.");
+    notify("Pakisuri ang borrow date at expected return date.");
     return;
   }
 
   const item = inventory.find(x => x.id === equipmentId);
-
-  if (!item || quantity > available(item)) {
-    toast("Not enough available equipment.");
+  if (!item) {
+    notify("Hindi makita ang napiling equipment.");
     return;
   }
 
-  item.availableQuantity -= quantity;
+  if (["Damaged", "Needs Repair"].includes(item.condition)) {
+    notify("Hindi puwedeng hiramin ang equipment na ito.");
+    return;
+  }
 
-  borrowings.unshift({
-    id: id(),
-    equipmentId: item.id,
-    equipmentName: item.name,
-    borrowerName: name,
+  if (quantity > Number(item.availableQuantity)) {
+    notify("Kulang ang available quantity.");
+    return;
+  }
+
+  const borrowing = {
+    id: makeId(),
+    borrowerName,
     borrowerId,
-    borrowerContact: contact,
+    borrowerContact: $("borrowerContact").value.trim(),
+    equipmentId,
+    equipmentName: item.name,
     quantity,
     borrowDate,
     dueDate,
-    status: "Borrowed",
     returnedAt: "",
+    status: "Borrowed",
     returnCondition: "",
     returnNotes: "",
     createdAt: new Date().toISOString()
-  });
+  };
 
-  if (saveData()) {
-    $("borrowForm").reset();
-    $("borrowQuantity").value = 1;
-    setDates();
-    renderAll();
-    toast("Borrow transaction saved.");
-  }
-}
+  item.availableQuantity -= quantity;
+  borrowings.unshift(borrowing);
 
-/* ---------------- RETURN ---------------- */
-
-function openReturn(borrowId) {
-  const record = borrowings.find(b => b.id === borrowId);
-  if (!record || record.status !== "Borrowed") return;
-
-  $("returnBorrowId").value = borrowId;
-  $("returnSummary").textContent =
-    `${record.borrowerName} — ${record.equipmentName} — ${record.quantity} unit(s)`;
-
-  $("returnCondition").value = "Good";
-  $("returnNotes").value = "";
-  $("returnDialog").showModal();
-}
-
-function closeReturn() {
-  if ($("returnDialog").open) $("returnDialog").close();
-}
-
-function processReturn() {
-  const record = borrowings.find(b => b.id === $("returnBorrowId").value);
-  if (!record || record.status !== "Borrowed") {
-    toast("Borrowing record not found.");
+  if (!saveData()) {
+    item.availableQuantity += quantity;
+    borrowings.shift();
     return;
   }
 
-  const item = inventory.find(x => x.id === record.equipmentId);
-  const condition = $("returnCondition").value;
-
-  record.status = "Returned";
-  record.returnedAt = today();
-  record.returnCondition = condition;
-  record.returnNotes = $("returnNotes").value.trim();
-
-  if (item) {
-    if (condition === "Damaged" || condition === "Needs Repair") {
-      item.unavailableQuantity = unavailable(item) + record.quantity;
-    } else {
-      item.availableQuantity = available(item) + record.quantity;
-    }
-  }
-
-  saveData();
-  closeReturn();
+  $("borrowForm").reset();
+  $("borrowQuantity").value = 1;
+  setDates();
   renderAll();
-  toast("Equipment return recorded.");
+  notify("Borrow transaction recorded!");
 }
 
-/* ---------------- HISTORY ---------------- */
+// ---------- RETURN ----------
+
+function openReturnDialog(id) {
+  const borrowing = borrowings.find(b => b.id === id && b.status === "Borrowed");
+  if (!borrowing) return;
+
+  $("returnBorrowId").value = id;
+  $("returnSummary").textContent =
+    `${borrowing.borrowerName} · ${borrowing.equipmentName} · ${borrowing.quantity} unit(s)`;
+
+  $("returnCondition").value = "Good";
+  $("returnNotes").value = "";
+
+  $("returnDialog").showModal();
+}
+
+function confirmReturn() {
+  const id = $("returnBorrowId").value;
+  const borrowing = borrowings.find(b => b.id === id && b.status === "Borrowed");
+
+  if (!borrowing) {
+    notify("Hindi makita ang active borrowing record.");
+    return;
+  }
+
+  const item = inventory.find(x => x.id === borrowing.equipmentId);
+  if (!item) {
+    notify("Hindi makita ang equipment record.");
+    return;
+  }
+
+  const condition = $("returnCondition").value;
+  const notes = $("returnNotes").value.trim();
+  const isUnusable = ["Damaged", "Needs Repair"].includes(condition);
+
+  borrowing.status = "Returned";
+  borrowing.returnedAt = todayISO();
+  borrowing.returnCondition = condition;
+  borrowing.returnNotes = notes;
+
+  if (isUnusable) {
+    item.unavailableQuantity += borrowing.quantity;
+  } else {
+    item.availableQuantity += borrowing.quantity;
+  }
+
+  if (!saveData()) {
+    borrowing.status = "Borrowed";
+    borrowing.returnedAt = "";
+    borrowing.returnCondition = "";
+    borrowing.returnNotes = "";
+    if (isUnusable) item.unavailableQuantity -= borrowing.quantity;
+    else item.availableQuantity -= borrowing.quantity;
+    return;
+  }
+
+  $("returnDialog").close();
+  renderAll();
+  notify("Return recorded successfully!");
+}
+
+// ---------- ACTIVE BORROWINGS ----------
 
 function renderActiveBorrowings() {
   const active = borrowings.filter(b => b.status === "Borrowed");
@@ -600,18 +628,19 @@ function renderActiveBorrowings() {
   $("activeBorrowingsBody").innerHTML = active.length
     ? active.map(b => `
       <tr>
-        <td>
-          <strong>${safe(b.borrowerName)}</strong><br>
-          ${safe(b.equipmentName)}<br>
-          <small>${safe(b.borrowerId)}</small>
+        <td><strong>${escapeHTML(b.borrowerName)}</strong><br>
+          <span class="muted">${escapeHTML(b.equipmentName)}</span><br>
+          <small>${escapeHTML(b.borrowerId)}</small>
         </td>
-        <td>${formatDate(b.dueDate)}</td>
+        <td>${dateLabel(b.dueDate)}</td>
         <td>${b.quantity}</td>
-        <td><button type="button" data-return="${b.id}">Return</button></td>
+        <td><button class="table-action" data-return="${escapeHTML(b.id)}">Return</button></td>
       </tr>
     `).join("")
     : `<tr><td colspan="4" class="muted">No active borrowings.</td></tr>`;
 }
+
+// ---------- HISTORY ----------
 
 function renderHistory() {
   const search = $("historySearch").value.toLowerCase().trim();
@@ -625,166 +654,190 @@ function renderHistory() {
   $("historyBody").innerHTML = rows.length
     ? rows.map(b => `
       <tr>
-        <td>${safe(b.borrowerName)}<br><small>${safe(b.borrowerId)}</small></td>
-        <td>${safe(b.equipmentName)}</td>
+        <td><strong>${escapeHTML(b.borrowerName)}</strong><br><small>${escapeHTML(b.borrowerId)}</small></td>
+        <td>${escapeHTML(b.equipmentName)}</td>
         <td>${b.quantity}</td>
-        <td>${formatDate(b.borrowDate)}</td>
-        <td>${formatDate(b.dueDate)}</td>
-        <td>${formatDate(b.returnedAt)}</td>
-        <td>${b.status === "Borrowed" ? "Active" : "Returned"}</td>
+        <td>${dateLabel(b.borrowDate)}</td>
+        <td>${dateLabel(b.dueDate)}</td>
+        <td>${dateLabel(b.returnedAt)}</td>
+        <td><span class="status ${b.status === "Borrowed" ? "borrowed" : ""}">${b.status === "Borrowed" ? "Active" : "Returned"}</span></td>
       </tr>
     `).join("")
-    : `<tr><td colspan="7" class="muted">No transactions yet.</td></tr>`;
+    : `<tr><td colspan="7" class="muted">No matching transactions.</td></tr>`;
 }
 
-/* ---------------- NOTIFICATIONS ---------------- */
+// ---------- NOTIFICATIONS ----------
 
 function renderNotifications() {
   const active = borrowings.filter(b => b.status === "Borrowed");
-  const overdue = active.filter(b => b.dueDate < today());
-  const dueToday = active.filter(b => b.dueDate === today());
+  const overdue = active.filter(b => b.dueDate < todayISO());
+  const dueToday = active.filter(b => b.dueDate === todayISO());
+
+  const alerts = [
+    ...overdue.map(b => ({ b, label: "OVERDUE", kind: "overdue" })),
+    ...dueToday.map(b => ({ b, label: "DUE TODAY", kind: "today" }))
+  ];
 
   $("overdueCount").textContent = overdue.length;
   $("dueTodayCount").textContent = dueToday.length;
-
-  const alerts = [
-    ...overdue.map(b => ({ ...b, alert: "OVERDUE" })),
-    ...dueToday.map(b => ({ ...b, alert: "DUE TODAY" }))
-  ];
-
   $("notificationBadge").textContent = alerts.length;
   $("notificationBadge").classList.toggle("hidden", alerts.length === 0);
 
   $("notificationList").innerHTML = alerts.length
-    ? alerts.map(b => `
-      <div class="notification">
+    ? alerts.map(({ b, label, kind }) => `
+      <div class="notification ${kind === "overdue" ? "overdue" : ""}">
         <div>
-          <strong>${b.alert}: ${safe(b.equipmentName)}</strong>
-          <p>${safe(b.borrowerName)} — Due ${formatDate(b.dueDate)}</p>
+          <strong>${label}: ${escapeHTML(b.equipmentName)} — ${escapeHTML(b.borrowerName)}</strong>
+          <small>ID: ${escapeHTML(b.borrowerId)} · Due ${dateLabel(b.dueDate)} · ${b.quantity} unit(s)</small>
         </div>
-        <button type="button" data-alert-return="${b.id}">Process return</button>
+        <button class="table-action" data-alert-return="${escapeHTML(b.id)}">Process return</button>
       </div>
     `).join("")
     : `<p class="muted">No overdue or due-today transactions.</p>`;
 }
 
-/* ---------------- DASHBOARD ---------------- */
+// ---------- DASHBOARD / ANALYTICS ----------
 
-function renderDashboard() {
-  const totalTypes = inventory.length;
-  const totalUnits = inventory.reduce((sum, item) => sum + total(item), 0);
-  const availableUnits = inventory.reduce((sum, item) => sum + available(item), 0);
-  const unavailableUnits = inventory.reduce((sum, item) => sum + unavailable(item), 0);
-  const borrowedUnits = Math.max(0, totalUnits - availableUnits - unavailableUnits);
+function renderAnalytics() {
+  const total = inventory.reduce((sum, x) => sum + Number(x.totalQuantity || 0), 0);
+  const available = inventory.reduce((sum, x) => sum + Number(x.availableQuantity || 0), 0);
+  const unavailable = inventory.reduce((sum, x) => sum + Number(x.unavailableQuantity || 0), 0);
+  const borrowed = borrowings
+    .filter(b => b.status === "Borrowed")
+    .reduce((sum, b) => sum + Number(b.quantity || 0), 0);
 
-  $("totalItems").textContent = totalTypes;
-  $("totalQuantity").textContent = totalUnits;
-  $("availableItems").textContent = availableUnits;
-  $("borrowedItems").textContent = borrowedUnits;
+  $("totalItems").textContent = inventory.length;
+  $("totalQuantity").textContent = total;
+  $("availableItems").textContent = available;
+  $("borrowedItems").textContent = borrowed;
 
-  const max = Math.max(totalUnits, 1);
-  const data = [
-    ["Available", availableUnits],
-    ["Borrowed", borrowedUnits],
-    ["Unavailable", unavailableUnits]
+  const max = Math.max(total, 1);
+  const values = [
+    ["Available", available],
+    ["Borrowed", borrowed],
+    ["Unavailable", unavailable]
   ];
 
-  $("analyticsBars").innerHTML = data.map(([label, value]) => `
+  $("analyticsBars").innerHTML = values.map(([label, value]) => `
     <div class="bar-row">
       <span>${label}</span>
-      <div class="bar-track">
-        <div class="bar-fill" style="width:${Math.min(100, value / max * 100)}%"></div>
-      </div>
-      <strong>${value}</strong>
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.min(100, value / max * 100)}%"></div></div>
+      <strong class="bar-count">${value}</strong>
     </div>
   `).join("");
 }
 
-/* ---------------- QR CODE ---------------- */
+function renderAll() {
+  renderInventory();
+  renderBorrowSelect();
+  renderActiveBorrowings();
+  renderHistory();
+  renderNotifications();
+  renderAnalytics();
+}
 
-function makeSelectedQR() {
-  const item = inventory.find(x => x.id === selectedQrEquipmentId);
+// ---------- CSV EXPORT ----------
 
-  if (!item) {
-    toast("Select an equipment first.");
-    return;
-  }
+function exportHistory() {
+  const headers = [
+    "Borrower", "Borrower ID", "Contact", "Equipment", "Quantity",
+    "Borrow Date", "Due Date", "Returned Date", "Status",
+    "Return Condition", "Return Notes"
+  ];
 
-  if (!window.QRCode) {
-    toast("QR Code library did not load. Check your internet connection.");
-    return;
-  }
+  const rows = borrowings.map(b => [
+    b.borrowerName, b.borrowerId, b.borrowerContact, b.equipmentName,
+    b.quantity, b.borrowDate, b.dueDate, b.returnedAt, b.status,
+    b.returnCondition, b.returnNotes
+  ]);
 
+  const csv = [headers, ...rows]
+    .map(row => row.map(value => `"${String(value ?? "").replace(/"/g, '""')}"`).join(","))
+    .join("\r\n");
+
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = `eborrow-history-${todayISO()}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+// ---------- QR CODE ----------
+
+function showEquipmentQr(item) {
+  selectedQrEquipmentId = item.id;
+  $("scanResult").textContent = `Selected: ${item.name} (ID: ${item.id})`;
   $("makeQr").disabled = false;
   $("qrOutput").innerHTML = "";
 
-  new QRCode($("qrOutput"), {
-    text: `EBORROW:${item.id}`,
-    width: 160,
-    height: 160
-  });
-
-  $("scanResult").textContent =
-    `${item.name} — ${available(item)} unit(s) available`;
+  if (window.QRCode) {
+    new QRCode($("qrOutput"), {
+      text: `EBORROW:${item.id}`,
+      width: 160,
+      height: 160
+    });
+  } else {
+    $("qrOutput").textContent = `QR payload: EBORROW:${item.id}`;
+    notify("QR generator library did not load.");
+  }
 }
 
 async function startScanner() {
   if (!window.Html5Qrcode) {
-    toast("QR scanner library did not load.");
-    return;
-  }
-
-  if (!window.isSecureContext) {
-    toast("Camera requires HTTPS. Open your GitHub Pages HTTPS website.");
+    notify("QR scanner library did not load. Check your internet connection.");
     return;
   }
 
   try {
-    if (!scanner) scanner = new Html5Qrcode("qr-reader");
+    if (!qrScanner) qrScanner = new Html5Qrcode("qr-reader");
 
     $("startScanner").disabled = true;
 
-    await scanner.start(
+    await qrScanner.start(
       { facingMode: "environment" },
-      { fps: 10, qrbox: { width: 220, height: 220 } },
+      { fps: 10, qrbox: { width: 230, height: 230 } },
       async decodedText => {
         await stopScanner();
 
-        const equipmentId = decodedText.startsWith("EBORROW:")
-          ? decodedText.slice("EBORROW:".length)
+        const id = decodedText.startsWith("EBORROW:")
+          ? decodedText.slice(8)
           : decodedText;
 
-        const item = inventory.find(x => x.id === equipmentId);
+        const item = inventory.find(x => x.id === id);
 
-        if (!item) {
-          $("scanResult").textContent = "No matching equipment found.";
-          toast("No matching equipment found.");
-          return;
+        if (item) {
+          showEquipmentQr(item);
+          $("scanResult").textContent =
+            `Found: ${item.name} · ${item.availableQuantity}/${item.totalQuantity} available`;
+          notify("Equipment found.");
+        } else {
+          $("scanResult").textContent = `QR scanned: ${decodedText}. No matching equipment found.`;
+          notify("Walang matching equipment sa inventory.");
         }
-
-        selectedQrEquipmentId = item.id;
-        makeSelectedQR();
-        toast("Equipment QR successfully scanned.");
       },
       () => {}
     );
 
     $("stopScanner").disabled = false;
-    toast("Scanner started. Point the camera at an equipment QR code.");
   } catch (error) {
     console.error("Scanner error:", error);
     $("startScanner").disabled = false;
-    $("stopScanner").disabled = true;
-    toast("Camera unavailable. Allow camera permission in your browser.");
+    notify("Hindi mabuksan ang camera. Payagan ang camera access at gumamit ng HTTPS.");
   }
 }
 
 async function stopScanner() {
-  if (scanner && scanner.isScanning) {
+  if (qrScanner && qrScanner.isScanning) {
     try {
-      await scanner.stop();
+      await qrScanner.stop();
+      await qrScanner.clear();
     } catch (error) {
-      console.warn(error);
+      console.warn("Scanner stop:", error);
     }
   }
 
@@ -792,48 +845,88 @@ async function stopScanner() {
   $("stopScanner").disabled = true;
 }
 
-/* ---------------- CSV EXPORT ---------------- */
+// ---------- DATE DEFAULTS ----------
 
-function exportCSV() {
-  const headings = [
-    "Borrower", "Borrower ID", "Contact", "Equipment",
-    "Quantity", "Borrow Date", "Due Date", "Returned",
-    "Status", "Return Condition", "Return Notes"
-  ];
+function setDates() {
+  $("borrowDate").value = todayISO();
+  $("dueDate").value = todayISO();
+  $("dueDate").min = todayISO();
+}
 
-  const rows = borrowings.map(b => [
-    b.borrowerName, b.borrowerId, b.borrowerContact,
-    b.equipmentName, b.quantity, b.borrowDate, b.dueDate,
-    b.returnedAt, b.status, b.returnCondition, b.returnNotes
-  ]);
+// ---------- EVENT LISTENERS ----------
 
-  const csv = [headings, ...rows].map(row =>
-    row.map(value => `"${String(value ?? "").replace(/"/g, '""')}"`).join(",")
-  ).join("\r\n");
+function bindEvents() {
+  $("adminToggleButton").addEventListener("click", toggleAdmin);
 
-  const blob = new Blob(["\uFEFF" + csv], {
-    type: "text/csv;charset=utf-8"
+  $("addEquipmentTop").addEventListener("click", openAddForm);
+  $("addEquipmentButton").addEventListener("click", openAddForm);
+  $("quickAdd").addEventListener("click", openAddForm);
+
+  $("cancelForm").addEventListener("click", closeEquipmentForm);
+  $("inventoryForm").addEventListener("submit", saveEquipment);
+  $("itemImage").addEventListener("change", handleImageChange);
+
+  $("inventoryList").addEventListener("click", handleInventoryClick);
+
+  $("searchInput").addEventListener("input", renderInventory);
+  $("filterCategory").addEventListener("change", renderInventory);
+  $("filterStatus").addEventListener("change", renderInventory);
+
+  $("borrowForm").addEventListener("submit", saveBorrow);
+  $("borrowDate").addEventListener("change", () => {
+    $("dueDate").min = $("borrowDate").value;
+  });
+  $("quickBorrow").addEventListener("click", () => {
+    $("borrow").scrollIntoView({ behavior: "smooth" });
   });
 
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `eborrow-history-${today()}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
+  $("activeBorrowingsBody").addEventListener("click", event => {
+    const button = event.target.closest("[data-return]");
+    if (button) openReturnDialog(button.dataset.return);
+  });
+
+  $("notificationList").addEventListener("click", event => {
+    const button = event.target.closest("[data-alert-return]");
+    if (button) openReturnDialog(button.dataset.alertReturn);
+  });
+
+  $("confirmReturn").addEventListener("click", confirmReturn);
+  $("cancelReturn").addEventListener("click", () => $("returnDialog").close());
+
+  $("historySearch").addEventListener("input", renderHistory);
+  $("historyStatus").addEventListener("change", renderHistory);
+  $("exportHistory").addEventListener("click", exportHistory);
+
+  $("makeQr").addEventListener("click", () => {
+    const item = inventory.find(x => x.id === selectedQrEquipmentId);
+    if (item) showEquipmentQr(item);
+  });
+
+  $("quickScan").addEventListener("click", () => {
+    $("qrSection").scrollIntoView({ behavior: "smooth" });
+  });
+
+  $("startScanner").addEventListener("click", startScanner);
+  $("stopScanner").addEventListener("click", stopScanner);
 }
 
-/* ---------------- RENDER ---------------- */
+// ---------- START APPLICATION ----------
 
-function renderAll() {
-  renderInventory();
-  renderActiveBorrowings();
-  renderHistory();
-  renderNotifications();
-  renderDashboard();
+function init() {
+  loadData();
+  bindEvents();
+  setDates();
   updateAdminUI();
+  renderAll();
+
+  console.log("E-BORROW loaded successfully.");
+  console.log("Inventory records:", inventory.length);
 }
+
+document.addEventListener("DOMContentLoaded", init);
 
 window.addEventListener("beforeunload", () => {
-  if (scanner?.isScanning) scanner.stop().catch(() => {});
+  if (qrScanner?.isScanning) {
+    qrScanner.stop().catch(() => {});
+  }
 });
