@@ -828,3 +828,20 @@ footer small {
     display: block;
     margin: auto;
 }
+
+/* SMALLER IMAGE PREVIEW SA ADD EQUIPMENT */
+#imagePreview {
+    width: auto !important;
+    max-width: 180px !important;
+    height: 90px !important;
+    object-fit: contain !important;
+    margin: auto;
+}
+
+/* SMALLER IMAGE SA INVENTORY */
+.inventory-card .item-image {
+    width: 100% !important;
+    height: 100px !important;
+    object-fit: contain !important;
+    background: #ffffff;
+}
