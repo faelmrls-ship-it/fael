@@ -343,13 +343,20 @@ function openAddForm() {
   const quantity = document.getElementById("itemQuantity");
   if (quantity) quantity.value = 1;
 }
+
 function closeEquipmentForm() {
   const addItem = document.getElementById("addItem");
-  if (addItem) addItem.hidden = true;
+
+  if (addItem) {
+    addItem.hidden = true;
+    addItem.classList.add("hidden");
+    addItem.style.display = "";
+  }
 
   editingId = null;
   selectedImage = "";
 }
+
 
 function handleImageUpload(event) {
   const file = event.target.files?.[0];
