@@ -308,7 +308,10 @@ function showSection(sectionName) {
 // ---------------------------------------------------------
 
 function openAddForm() {
-  if (!requireAdmin()) return;
+  if (!isAdmin) {
+    showToast("Admin access lang ang puwedeng magdagdag ng equipment.", "error");
+    return;
+  }
 
   editingId = null;
   selectedImage = "";
@@ -317,20 +320,29 @@ function openAddForm() {
   if (form) form.reset();
 
   const title = document.getElementById("formTitle");
-  if (title) title.textContent = "Add Equipment";
-
-  const preview = document.getElementById("imagePreview");
-  if (preview) preview.innerHTML = "";
+  if (title) title.textContent = "Add New Equipment";
 
   const addItem = document.getElementById("addItem");
-  if (addItem) addItem.hidden = false;
+
+  if (addItem) {
+    addItem.hidden = false;
+    addItem.classList.remove("hidden");
+    addItem.style.display = "block";
+    addItem.scrollIntoView({ behavior: "smooth" });
+  }
+
+  const preview = document.getElementById("imagePreview");
+  if (preview) {
+    preview.removeAttribute("src");
+    preview.classList.add("hidden");
+  }
+
+  const placeholder = document.getElementById("uploadPlaceholder");
+  if (placeholder) placeholder.classList.remove("hidden");
 
   const quantity = document.getElementById("itemQuantity");
   if (quantity) quantity.value = 1;
-
-  showSection("inventory");
 }
-
 function closeEquipmentForm() {
   const addItem = document.getElementById("addItem");
   if (addItem) addItem.hidden = true;
