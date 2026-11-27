@@ -8,384 +8,204 @@
   <title>E-BORROW | Electronic Inventory</title>
   <link rel="stylesheet" href="style.css">
 
-  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- QR libraries: pinalitan ang unpkg -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
+  <script src="script.js" defer></script>
 </head>
 <body>
 
 <header class="header">
   <a class="logo" href="#dashboard"><span>⚙</span> E-BORROW</a>
-
   <nav>
     <a href="#dashboard">Dashboard</a>
     <a href="#inventory">Inventory</a>
     <a href="#borrow">Borrow / Return</a>
     <a href="#history">History</a>
-    <a href="#notifications">
-      Notifications
-      <span id="notificationBadge" class="nav-badge hidden">0</span>
-    </a>
+    <a href="#notifications">Notifications <span id="notificationBadge" class="nav-badge hidden">0</span></a>
   </nav>
-
   <div class="account-area">
-    <span id="adminStatus">Borrower Mode</span>
-    <button id="adminToggleButton" type="button">Admin Login</button>
+    <span id="adminStatus" class="user-email">Borrower Access</span>
+    <button id="adminToggleButton" type="button" class="secondary-btn">Admin Login</button>
   </div>
 </header>
 
 <main class="container">
-  <div id="appContent">
+  <section id="dashboard">
+    <div class="welcome">
+      <div>
+        <p class="eyebrow">EQUIPMENT MANAGEMENT SYSTEM</p>
+        <h1>Electronic Inventory</h1>
+        <p class="muted">Manage equipment, borrowing, returns, and inventory activity.</p>
+      </div>
+      <button type="button" id="addEquipmentTop" class="admin-only hidden">+ Add Equipment</button>
+    </div>
 
-    <!-- DASHBOARD -->
-    <section id="dashboard">
-      <div class="welcome">
-        <div>
-          <p class="eyebrow">EQUIPMENT MANAGEMENT SYSTEM</p>
-          <h1>Electronic Inventory</h1>
-          <p class="muted">Manage equipment, borrowing, returns, and inventory activity.</p>
+    <div class="stats">
+      <article class="stat-card"><span>Total Equipment Types</span><h2 id="totalItems">0</h2><small>Registered items</small></article>
+      <article class="stat-card"><span>Total Quantity</span><h2 id="totalQuantity">0</h2><small>All units</small></article>
+      <article class="stat-card"><span>Available Units</span><h2 id="availableItems">0</h2><small>Ready to borrow</small></article>
+      <article class="stat-card"><span>Borrowed Units</span><h2 id="borrowedItems">0</h2><small>Currently checked out</small></article>
+    </div>
+
+    <div class="dashboard-grid">
+      <article class="panel">
+        <div class="section-heading"><div><h2>Inventory Overview</h2><p>Current equipment distribution</p></div></div>
+        <div id="analyticsBars" class="analytics-bars"><p class="muted">No inventory data yet.</p></div>
+      </article>
+      <article class="panel">
+        <div class="section-heading"><div><h2>Quick Actions</h2><p>Common inventory tasks</p></div></div>
+        <div class="quick-actions">
+          <button type="button" id="quickAdd" class="admin-only hidden">Add equipment</button>
+          <button type="button" id="quickBorrow" class="secondary-btn">Record a borrow</button>
+          <button type="button" id="quickScan" class="secondary-btn">Scan equipment QR</button>
         </div>
-        <button type="button" id="addEquipmentTop" class="admin-only">
-          + Add Equipment
-        </button>
+        <div class="mini-summary"><span>Overdue transactions</span><strong id="overdueCount">0</strong></div>
+        <div class="mini-summary"><span>Due today</span><strong id="dueTodayCount">0</strong></div>
+      </article>
+    </div>
+  </section>
+
+  <section id="addItem" class="panel hidden admin-only">
+    <div class="section-heading">
+      <div><h2 id="formTitle">Add New Equipment</h2><p>Register equipment in the inventory</p></div>
+    </div>
+    <form id="inventoryForm" class="form-grid">
+      <div class="full-width">
+        <label for="itemImage">Equipment Image</label>
+        <div class="image-upload">
+          <img id="imagePreview" class="hidden" alt="Equipment preview">
+          <div id="uploadPlaceholder"><span>📷</span><p>Click to upload equipment image</p><small>JPG, PNG or WEBP · up to 5MB</small></div>
+          <input type="file" id="itemImage" accept="image/jpeg,image/png,image/webp">
+        </div>
+        <p class="small muted">Images are compressed before saving.</p>
       </div>
 
-      <div class="stats">
-        <article class="stat-card">
-          <span>Total Equipment Types</span>
-          <h2 id="totalItems">0</h2>
-          <small>Registered items</small>
-        </article>
-        <article class="stat-card">
-          <span>Total Quantity</span>
-          <h2 id="totalQuantity">0</h2>
-          <small>All units</small>
-        </article>
-        <article class="stat-card">
-          <span>Available Units</span>
-          <h2 id="availableItems">0</h2>
-          <small>Ready to borrow</small>
-        </article>
-        <article class="stat-card">
-          <span>Borrowed Units</span>
-          <h2 id="borrowedItems">0</h2>
-          <small>Currently checked out</small>
-        </article>
+      <div><label for="itemName">Equipment Name</label><input id="itemName" type="text" required maxlength="100" placeholder="Example: Digital Multimeter"></div>
+      <div><label for="itemCategory">Category</label>
+        <select id="itemCategory" required>
+          <option value="">Select Category</option>
+          <option>Electronics</option><option>Power Tools</option><option>Hand Tools</option>
+          <option>Computer Equipment</option><option>Electrical Tools</option><option>Other</option>
+        </select>
       </div>
-
-      <div class="dashboard-grid">
-        <article class="panel">
-          <div class="section-heading">
-            <div>
-              <h2>Inventory Overview</h2>
-              <p>Current equipment distribution</p>
-            </div>
-          </div>
-          <div id="analyticsBars" class="analytics-bars">
-            <p class="muted">No inventory data yet.</p>
-          </div>
-        </article>
-
-        <article class="panel">
-          <div class="section-heading">
-            <div>
-              <h2>Quick Actions</h2>
-              <p>Common inventory tasks</p>
-            </div>
-          </div>
-
-          <div class="quick-actions">
-            <button type="button" id="quickAdd" class="admin-only">Add equipment</button>
-            <button type="button" id="quickBorrow" class="secondary-btn">Record a borrow</button>
-            <button type="button" id="quickScan" class="secondary-btn">Scan equipment QR</button>
-          </div>
-
-          <div class="mini-summary">
-            <span>Overdue transactions</span>
-            <strong id="overdueCount">0</strong>
-          </div>
-          <div class="mini-summary">
-            <span>Due today</span>
-            <strong id="dueTodayCount">0</strong>
-          </div>
-        </article>
+      <div><label for="itemQuantity">Total Quantity</label><input id="itemQuantity" type="number" min="1" step="1" value="1" required></div>
+      <div><label for="itemCondition">Condition</label>
+        <select id="itemCondition">
+          <option>Good</option><option>Excellent</option><option>Needs Repair</option><option>Damaged</option>
+        </select>
       </div>
-    </section>
-
-    <!-- ADD / EDIT EQUIPMENT -->
-    <section id="addItem" class="panel hidden" hidden>
-      <div class="section-heading">
-        <div>
-          <h2 id="formTitle">Add New Equipment</h2>
-          <p>Register equipment in the inventory</p>
-        </div>
+      <div class="full-width"><label for="itemDescription">Description</label><textarea id="itemDescription" maxlength="1000" placeholder="Equipment details..."></textarea></div>
+      <div class="form-buttons full-width">
+        <button type="submit" id="saveButton">Save Equipment</button>
+        <button type="button" id="cancelForm" class="secondary-btn">Cancel</button>
       </div>
+    </form>
+  </section>
 
-      <form id="inventoryForm" class="form-grid">
-        <div class="full-width">
-          <label for="itemImage">Equipment Image</label>
-          <div class="image-upload">
-            <img id="imagePreview" class="hidden" alt="Equipment preview">
-            <div id="uploadPlaceholder">
-              <span>📷</span>
-              <p>Click to upload equipment image</p>
-              <small>JPG, PNG or WEBP · up to 5MB</small>
-            </div>
-            <input type="file" id="itemImage" accept="image/jpeg,image/png,image/webp">
-          </div>
-          <p class="small muted">Images are compressed and saved in this browser.</p>
-        </div>
+  <section id="inventory">
+    <div class="section-heading">
+      <div><h2>Equipment Inventory</h2><p>All registered electronics and tools</p></div>
+      <button type="button" id="addEquipmentButton" class="admin-only hidden">+ Add Equipment</button>
+    </div>
+    <div class="filters">
+      <input type="search" id="searchInput" placeholder="Search equipment...">
+      <select id="filterCategory">
+        <option value="All">All Categories</option><option>Electronics</option><option>Power Tools</option>
+        <option>Hand Tools</option><option>Computer Equipment</option><option>Electrical Tools</option><option>Other</option>
+      </select>
+      <select id="filterStatus">
+        <option value="All">All Status</option><option value="Available">Available</option>
+        <option value="Borrowed">Borrowed</option><option value="Unavailable">Unavailable</option>
+      </select>
+    </div>
+    <div id="inventoryList" class="inventory-grid"></div>
+    <p id="emptyMessage" class="empty hidden">No equipment found. Add your first equipment!</p>
+  </section>
 
-        <div>
-          <label for="itemName">Equipment Name</label>
-          <input id="itemName" type="text" required maxlength="100" placeholder="Example: Digital Multimeter">
+  <section id="borrow" class="panel">
+    <div class="section-heading"><div><h2>Borrow / Return Equipment</h2><p>Create a borrowing record or process an active return</p></div></div>
+    <div class="two-column">
+      <form id="borrowForm">
+        <h3>New Borrow Transaction</h3>
+        <label for="borrowerName">Borrower's Name</label><input id="borrowerName" required maxlength="120" placeholder="Full name">
+        <label for="borrowerId">Student / Employee ID</label><input id="borrowerId" required maxlength="60" placeholder="ID number">
+        <label for="borrowerContact">Contact / Email (optional)</label><input id="borrowerContact" maxlength="120" placeholder="Contact details">
+        <label for="borrowEquipment">Equipment</label><select id="borrowEquipment" required><option value="">Select available equipment</option></select>
+        <label for="borrowQuantity">Quantity to Borrow</label><input id="borrowQuantity" type="number" min="1" step="1" value="1" required>
+        <div class="form-grid compact">
+          <div><label for="borrowDate">Borrow Date</label><input id="borrowDate" type="date" required></div>
+          <div><label for="dueDate">Expected Return</label><input id="dueDate" type="date" required></div>
         </div>
-
-        <div>
-          <label for="itemCategory">Category</label>
-          <select id="itemCategory" required>
-            <option value="">Select Category</option>
-            <option>Electronics</option>
-            <option>Power Tools</option>
-            <option>Hand Tools</option>
-            <option>Computer Equipment</option>
-            <option>Electrical Tools</option>
-            <option>Other</option>
-          </select>
-        </div>
-
-        <div>
-          <label for="itemQuantity">Total Quantity</label>
-          <input id="itemQuantity" type="number" min="1" step="1" value="1" required>
-        </div>
-
-        <div>
-          <label for="itemCondition">Condition</label>
-          <select id="itemCondition">
-            <option>Good</option>
-            <option>Excellent</option>
-            <option>Needs Repair</option>
-            <option>Damaged</option>
-          </select>
-        </div>
-
-        <div class="full-width">
-          <label for="itemDescription">Description</label>
-          <textarea id="itemDescription" maxlength="1000" placeholder="Equipment details..."></textarea>
-        </div>
-
-        <div class="form-buttons full-width">
-          <button type="submit" id="saveButton">Save Equipment</button>
-          <button type="button" id="cancelForm" class="secondary-btn">Cancel</button>
-        </div>
+        <button type="submit">Save Borrow Transaction</button>
       </form>
-    </section>
-
-    <!-- INVENTORY -->
-    <section id="inventory">
-      <div class="section-heading">
-        <div>
-          <h2>Equipment Inventory</h2>
-          <p>All registered electronics and tools</p>
-        </div>
-        <button type="button" id="addEquipmentButton" class="admin-only">+ Add Equipment</button>
-      </div>
-
-      <div class="filters">
-        <input type="search" id="searchInput" placeholder="Search equipment...">
-        <select id="filterCategory">
-          <option value="All">All Categories</option>
-          <option>Electronics</option>
-          <option>Power Tools</option>
-          <option>Hand Tools</option>
-          <option>Computer Equipment</option>
-          <option>Electrical Tools</option>
-          <option>Other</option>
-        </select>
-        <select id="filterStatus">
-          <option value="All">All Status</option>
-          <option value="Available">Available</option>
-          <option value="Borrowed">Borrowed</option>
-          <option value="Unavailable">Unavailable</option>
-        </select>
-      </div>
-
-      <div id="inventoryList" class="inventory-grid"></div>
-      <p id="emptyMessage" class="empty hidden">No equipment found. Add your first equipment!</p>
-    </section>
-
-    <!-- BORROW / RETURN -->
-    <section id="borrow" class="panel">
-      <div class="section-heading">
-        <div>
-          <h2>Borrow / Return Equipment</h2>
-          <p>Create a borrowing record or process an active return</p>
+      <div>
+        <h3>Active Borrowings</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Borrower / Equipment</th><th>Due date</th><th>Qty</th><th>Action</th></tr></thead>
+            <tbody id="activeBorrowingsBody"><tr><td colspan="4" class="muted">No active borrowings.</td></tr></tbody>
+          </table>
         </div>
       </div>
+    </div>
+  </section>
 
-      <div class="two-column">
-        <form id="borrowForm">
-          <h3>New Borrow Transaction</h3>
+  <section id="history">
+    <div class="section-heading">
+      <div><h2>Borrowing History</h2><p>All borrowing and return transactions</p></div>
+      <button type="button" id="exportHistory" class="secondary-btn">Export CSV</button>
+    </div>
+    <div class="filters history-filters">
+      <input type="search" id="historySearch" placeholder="Search borrower, ID, or equipment...">
+      <select id="historyStatus">
+        <option value="All">All transactions</option><option value="Borrowed">Active</option><option value="Returned">Returned</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Borrower</th><th>Equipment</th><th>Qty</th><th>Borrowed</th><th>Due</th><th>Returned</th><th>Status</th></tr></thead>
+        <tbody id="historyBody"><tr><td colspan="7" class="muted">No transactions yet.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
 
-          <label for="borrowerName">Borrower's Name</label>
-          <input id="borrowerName" required maxlength="120" placeholder="Full name">
+  <section id="notifications">
+    <div class="section-heading"><div><h2>Notifications & Alerts</h2><p>Overdue and due-today borrowing records</p></div></div>
+    <div id="notificationList" class="notification-list"><p class="muted">No alerts.</p></div>
+  </section>
 
-          <label for="borrowerId">Student / Employee ID</label>
-          <input id="borrowerId" required maxlength="60" placeholder="ID number">
-
-          <label for="borrowerContact">Contact / Email (optional)</label>
-          <input id="borrowerContact" maxlength="120" placeholder="Contact details">
-
-          <label for="borrowEquipment">Equipment</label>
-          <select id="borrowEquipment" required>
-            <option value="">Select available equipment</option>
-          </select>
-
-          <label for="borrowQuantity">Quantity to Borrow</label>
-          <input id="borrowQuantity" type="number" min="1" step="1" value="1" required>
-
-          <div class="form-grid compact">
-            <div>
-              <label for="borrowDate">Borrow Date</label>
-              <input id="borrowDate" type="date" required>
-            </div>
-            <div>
-              <label for="dueDate">Expected Return</label>
-              <input id="dueDate" type="date" required>
-            </div>
-          </div>
-
-          <button type="submit">Save Borrow Transaction</button>
-        </form>
-
-        <div>
-          <h3>Active Borrowings</h3>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Borrower / Equipment</th>
-                  <th>Due date</th>
-                  <th>Qty</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody id="activeBorrowingsBody">
-                <tr><td colspan="4" class="muted">No active borrowings.</td></tr>
-              </tbody>
-            </table>
-          </div>
+  <section id="qrSection" class="panel">
+    <div class="section-heading"><div><h2>QR Code Scanner</h2><p>Scan an equipment QR code to locate its inventory record</p></div></div>
+    <div class="scanner-layout">
+      <div>
+        <div id="qr-reader"></div>
+        <div class="form-buttons">
+          <button type="button" id="startScanner">Start Scanner</button>
+          <button type="button" id="stopScanner" class="secondary-btn" disabled>Stop Scanner</button>
         </div>
       </div>
-    </section>
-
-    <!-- HISTORY -->
-    <section id="history">
-      <div class="section-heading">
-        <div>
-          <h2>Borrowing History</h2>
-          <p>All borrowing and return transactions</p>
-        </div>
-        <button type="button" id="exportHistory" class="secondary-btn">Export CSV</button>
+      <div class="scan-result">
+        <h3>Scan result</h3>
+        <p id="scanResult" class="muted">No QR code scanned yet.</p>
+        <button type="button" id="makeQr" class="secondary-btn" disabled>Show QR for selected equipment</button>
+        <div id="qrOutput"></div>
       </div>
-
-      <div class="filters history-filters">
-        <input type="search" id="historySearch" placeholder="Search borrower, ID, or equipment...">
-        <select id="historyStatus">
-          <option value="All">All transactions</option>
-          <option value="Borrowed">Active</option>
-          <option value="Returned">Returned</option>
-        </select>
-      </div>
-
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Borrower</th>
-              <th>Equipment</th>
-              <th>Qty</th>
-              <th>Borrowed</th>
-              <th>Due</th>
-              <th>Returned</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody id="historyBody">
-            <tr><td colspan="7" class="muted">No transactions yet.</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- NOTIFICATIONS -->
-    <section id="notifications">
-      <div class="section-heading">
-        <div>
-          <h2>Notifications & Alerts</h2>
-          <p>Overdue and due-today borrowing records</p>
-        </div>
-      </div>
-      <div id="notificationList" class="notification-list">
-        <p class="muted">No alerts.</p>
-      </div>
-    </section>
-
-    <!-- QR SCANNER -->
-    <section id="qrSection" class="panel">
-      <div class="section-heading">
-        <div>
-          <h2>QR Code Scanner</h2>
-          <p>Scan an equipment QR code to locate its inventory record</p>
-        </div>
-      </div>
-
-      <div class="scanner-layout">
-        <div>
-          <div id="qr-reader"></div>
-          <div class="form-buttons">
-            <button type="button" id="startScanner">Start Scanner</button>
-            <button type="button" id="stopScanner" class="secondary-btn" disabled>Stop Scanner</button>
-          </div>
-        </div>
-
-        <div class="scan-result">
-          <h3>Scan result</h3>
-          <p id="scanResult" class="muted">No QR code scanned yet.</p>
-          <button type="button" id="makeQr" class="secondary-btn" disabled>
-            Show QR for selected equipment
-          </button>
-          <div id="qrOutput"></div>
-        </div>
-      </div>
-    </section>
-
-  </div>
+    </div>
+  </section>
 </main>
 
-<footer>
-  <h3>E-BORROW</h3>
-  <p>Electronic Inventory Management System</p>
-  <small>© 2026 E-BORROW</small>
-</footer>
+<footer><h3>E-BORROW</h3><p>Electronic Inventory Management System</p><small>© 2026 E-BORROW</small></footer>
 
-<!-- RETURN DIALOG -->
 <dialog id="returnDialog" class="modal">
   <form method="dialog" id="returnForm">
     <h2>Return Equipment</h2>
     <p id="returnSummary" class="muted"></p>
     <input type="hidden" id="returnBorrowId">
-
     <label for="returnCondition">Condition upon return</label>
-    <select id="returnCondition">
-      <option>Good</option>
-      <option>Excellent</option>
-      <option>Needs Repair</option>
-      <option>Damaged</option>
-    </select>
-
+    <select id="returnCondition"><option>Good</option><option>Excellent</option><option>Needs Repair</option><option>Damaged</option></select>
     <label for="returnNotes">Return notes (optional)</label>
     <textarea id="returnNotes" maxlength="500" placeholder="Add notes about the returned item..."></textarea>
-
     <div class="form-buttons">
       <button type="button" id="confirmReturn">Confirm Return</button>
       <button type="button" id="cancelReturn" class="secondary-btn">Cancel</button>
@@ -394,7 +214,5 @@
 </dialog>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
-
-<script src="script.js" defer></script>
 </body>
 </html>
