@@ -151,7 +151,7 @@ function setupApplication() {
   // Ipakita ang Dashboard sa unang pagbukas
   showSection("dashboard");
 }
-
+fixQuickButtons();
 
 function setupAdminButton() {
   const accountArea = document.querySelector(".account-area");
@@ -1123,3 +1123,42 @@ window.addEventListener("beforeunload", () => {
     qrScanner.stop().catch(() => {});
   }
 });
+
+function fixQuickButtons() {
+  document.querySelectorAll("button").forEach(button => {
+    const text = button.textContent.trim().toLowerCase();
+
+    // Record a borrow
+    if (text.includes("record a borrow")) {
+      button.onclick = function () {
+        const borrowForm = document.getElementById("borrowForm");
+        const section = borrowForm?.closest("section") || borrowForm;
+
+        if (section) {
+          section.hidden = false;
+          section.classList.remove("hidden");
+          section.scrollIntoView({ behavior: "smooth" });
+        }
+
+        if (borrowForm) {
+          borrowForm.scrollIntoView({ behavior: "smooth" });
+        }
+      };
+    }
+
+    // Scan equipment QR
+    if (text.includes("scan equipment qr")) {
+      button.onclick = async function () {
+        const qrSection = document.getElementById("qrSection");
+
+        if (qrSection) {
+          qrSection.hidden = false;
+          qrSection.classList.remove("hidden");
+          qrSection.scrollIntoView({ behavior: "smooth" });
+        }
+
+        await startScanner();
+      };
+    }
+  });
+}
